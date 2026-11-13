@@ -1,6 +1,7 @@
 """Build a public media-only Pages site; platform credentials are never required."""
 import hashlib
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -32,10 +33,22 @@ def gh(args):
 
 
 def build():
+    deployment = {
+        "source_commit": os.environ.get("GITHUB_SHA", ""),
+        "workflow_run": os.environ.get("GITHUB_RUN_ID", ""),
+        "attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+    }
+    if (os.environ.get("GITHUB_REPOSITORY") != REPOSITORY
+            or not re.fullmatch(r"[a-f0-9]{40}", deployment["source_commit"])
+            or not re.fullmatch(r"[0-9]{1,30}", deployment["workflow_run"])
+            or not re.fullmatch(r"[1-9][0-9]{0,5}", deployment["attempt"])):
+        raise ValueError("Media builds require the approved repository and a valid workflow context")
     releases = json.loads(gh(["api", f"repos/{REPOSITORY}/releases?per_page=10"]))
     if not isinstance(releases, list) or len(releases) > 8:
         raise ValueError("Media site supports at most eight pending video files")
-    selected = [validate_release(row) for row in releases]
+    selected = sorted(validate_release(row) for row in releases)
+    if len({sha for sha, _ in selected}) != len(selected):
+        raise ValueError("Conflicting media releases")
     if sum(size for _, size in selected) > SITE_LIMIT:
         raise ValueError("Media site exceeds 128 MiB")
     target = Path("public")
@@ -51,6 +64,10 @@ def build():
         '<meta name="robots" content="noindex"><title>Parv Ki Dhun media</title>'
         '<p>Temporary video delivery for Parv Ki Dhun.</p></html>', encoding="utf-8")
     (target / ".nojekyll").touch()
+    (target / "manifest.json").write_text(json.dumps({
+        "schema_version": 1, "deployment": deployment,
+        "videos": [{"sha256": sha, "bytes": size} for sha, size in selected],
+    }, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     print(f"Verified {len(selected)} temporary videos; {sum(s for _, s in selected)} bytes.")
 
 

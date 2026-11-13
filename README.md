@@ -12,7 +12,23 @@ every required destination. Files are not committed to Git history. Pages build
 artifacts expire after one day. GitHub/CDN caching may outlast removal; this is
 URL withdrawal, not a guarantee of immediate erasure of every cache.
 
-Enable Pages with **GitHub Actions** as its deployment source. Keep this repository
+Enable Pages with **GitHub Actions** as its deployment source and allow `main` in
+the `github-pages` environment. Release creation/deletion requests a separate
+`workflow_dispatch` from `main`; the release job has repository-local
+`actions: write` solely for that request. This avoids the observed
+[release-event Pages delivery issue](https://github.com/actions/deploy-pages/issues/383).
+The deploy job accepts only `workflow_dispatch` on `main`. Unrelated release
+tags are ignored; a tag deployment allowance is unnecessary with this version.
+
+Every build writes a public, nonsecret `manifest.json` containing its source
+commit, workflow run/attempt and the hashes/sizes of its videos. After deployment,
+`verify_site.py` waits at most three minutes for that exact inventory and fetches
+each MP4 without credentials or redirects to check its digest. A green Pages
+deployment without matching public delivery fails this verification. The private
+publishing queue also checks the exact video bytes before sending its URL to
+Buffer. Public URLs are retained until publication and the separate cleanup check.
+
+Keep the repository
 public on GitHub Free and platform credentials out of its secrets. The private
 source runner needs a separate token restricted to this repository with Contents
 read/write. Its one-time setup also needs an owner to enable Pages and install

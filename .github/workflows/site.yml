@@ -5,16 +5,37 @@ on:
     types: [published, deleted]
 permissions:
   contents: read
-  pages: write
-  id-token: write
 concurrency:
   group: media-pages
   cancel-in-progress: false
 jobs:
+  request-deployment:
+    if: >-
+      github.repository == 'nitinsharma47-ux/parv-ki-dhun-media' && github.event.repository.private == false
+      && github.event_name == 'release' && startsWith(github.event.release.tag_name, 'media-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      # Pages can report a successful release-event deployment while continuing
+      # to serve the previous artifact (actions/deploy-pages issue 383).
+      # A workflow_dispatch is permitted with GITHUB_TOKEN and deploys from main.
+      - name: Request a deployment from main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run site.yml --repo "$GITHUB_REPOSITORY" --ref main
   site:
-    if: github.repository == 'nitinsharma47-ux/parv-ki-dhun-media' && github.event.repository.private == false
+    if: >-
+      github.repository == 'nitinsharma47-ux/parv-ki-dhun-media' && github.event.repository.private == false
+      && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 8
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -22,6 +43,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
       - name: Build the site from hash-verified public media assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -33,3 +55,5 @@ jobs:
           retention-days: 1
       - uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
         id: deployment
+      - name: Verify the served inventory and every video
+        run: python3 verify_site.py
